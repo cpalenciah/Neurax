@@ -1,0 +1,202 @@
+﻿@page "/counter"
+@rendermode InteractiveServer
+@using System.Collections.Generic
+
+<h3>Neurona Artificial</h3>
+
+<div class="form-group">
+    <label>Seleccione la operación:</label>
+    <select class="form-control" value="@selectedOperation" @onchange="OnOperationChange">
+        <option value="AND">AND</option>
+        <option value="OR">OR</option>
+    </select>
+</div>
+
+<div class="form-group">
+    <label>Ingrese los pesos iniciales (separados por comas):</label>
+    <input class="form-control" @bind="initialWeights" />
+</div>
+
+<div class="form-group">
+    <label>Ingrese el bias inicial:</label>
+    <input class="form-control" type="number" @bind="initialBias" />
+</div>
+
+<div class="form-group">
+    <label>Seleccione el factor de aprendizaje:</label>
+    <input class="form-control" type="number" @bind="learningRate" step="0.01" />
+</div>
+
+<button class="btn btn-primary" @onclick="TrainPerceptron">Entrenar Perceptrón</button>
+
+@if (iterations.Count > 0)
+{
+    <h4>Iteraciones:</h4>
+    @foreach (var iter in iterations)
+    {
+        <h5>Iteración @iter.IterationNumber</h5>
+        <table class="table table-striped table-bordered table-hover">
+            <thead>
+                <tr>
+                    <th>X1</th>
+                    <th>X2</th>
+                    <th>θi</th>
+                    <th>T</th>
+                    <th>y</th>
+                    <th>Error</th>
+                    <th>Operación</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var detail in iter.Details)
+                {
+                    <tr>
+                        <td>@detail.Inputs[0].ToString("F2")</td>
+                        <td>@detail.Inputs[1].ToString("F2")</td>
+                        <td>@string.Join(", ", detail.Weights.Select(w => w.ToString("F2")))</td>
+                        <td>@detail.Bias.ToString("F2")</td>
+                        <td>@detail.Output</td>
+                        <td>@detail.Error.ToString("F2")</td>
+                        <td>@detail.Operation</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@if (iterations.Count > 0)
+{
+    <h4>Solución Final:</h4>
+    <ul>
+        <li>W1 = @perceptron.Weights[0].ToString("F2")</li>
+        <li>W2 = @perceptron.Weights[1].ToString("F2")</li>
+        <li>θi = @perceptron.Bias.ToString("F2")</li>
+    </ul>
+}
+
+@code {
+    private string selectedOperation = "AND";
+    private string initialWeights = "0,0";
+    private double initialBias = 0;
+    private double learningRate = 0.1;
+    private List<IterationInfo> iterations = new List<IterationInfo>();
+
+    private Perceptron perceptron;
+    private double[][] inputs;
+    private int[] targets;
+
+    protected override void OnInitialized()
+    {
+        SetInputsAndTargets();
+    }
+
+    private void OnOperationChange(ChangeEventArgs e)
+    {
+        selectedOperation = e.Value.ToString();
+        SetInputsAndTargets();
+    }
+
+    private void SetInputsAndTargets()
+    {
+        if (selectedOperation == "AND")
+        {
+            inputs = new double[][]
+            {
+                new double[] { 1, 1 },
+                new double[] { 1, -1 },
+                new double[] { -1, 1 },
+                new double[] { -1, -1 }
+                };
+            targets = new int[] { 1, 1, -1, -1 };
+        }
+        else
+        {
+            inputs = new double[][]
+            {
+                new double[] { 1, 1 },
+                new double[] { 1, -1 },
+                new double[] { -1, 1 },
+                new double[] { -1, -1 }
+                };
+            targets = new int[] { 1, 1, 1, -1 };
+        }
+    }
+
+    private void TrainPerceptron()
+    {
+        var weights = initialWeights.Split(',').Select(double.Parse).ToArray();
+        perceptron = new Perceptron(weights.Length, learningRate)
+        {
+            Weights = weights,
+            Bias = initialBias
+        };
+
+        iterations.Clear();
+        int iteration = 0;
+        bool hasError;
+        do
+        {
+            hasError = false;
+            var iterDetails = new List<IterationDetail>();
+            double[] newWeights = perceptron.Weights.ToArray();
+            double newBias = perceptron.Bias;
+            for (int i = 0; i < inputs.Length; i++)
+            {
+                var input = inputs[i];
+                var target = targets[i];
+                var prediction = perceptron.Predict(input);
+                var error = target - prediction;
+
+                
+                var operation = $"y = {input[0].ToString("F2")}({newWeights[0].ToString("F2")}) + {input[1].ToString("F2")}({newWeights[1].ToString("F2")}) + ({newBias.ToString("F2")}) = {(input[0] * newWeights[0] + input[1] * newWeights[1] + newBias).ToString("F2")} es {(input[0] * newWeights[0] + input[1] * newWeights[1] + newBias >= newBias ? ">=" : "<")} {(newBias)} ---> y = {prediction}";
+
+                iterDetails.Add(new IterationDetail
+                {
+                    Inputs = input,
+                    Weights = newWeights.ToArray(),
+                    Bias = newBias,
+                    Output = prediction,
+                    Error = error,
+                    Operation = operation
+                });
+
+                if (error != 0)
+                {
+                    for (int j = 0; j < newWeights.Length; j++)
+                    {
+                        newWeights[j] += perceptron.LearningRate * error * input[j];
+                    }
+                    newBias += perceptron.LearningRate * error;
+                    hasError = true;
+                }
+            }
+            perceptron.Weights = newWeights;
+            perceptron.Bias = newBias;
+
+            iterations.Add(new IterationInfo
+            {
+                IterationNumber = iteration,
+                Details = iterDetails
+            });
+            iteration++;
+        } while (hasError && iteration < 50);
+        StateHasChanged();
+    }
+
+    public class IterationInfo
+    {
+        public int IterationNumber { get; set; }
+        public List<IterationDetail> Details { get; set; }
+    }
+
+    public class IterationDetail
+    {
+        public double[] Inputs { get; set; }
+        public double[] Weights { get; set; }
+        public double Bias { get; set; }
+        public int Output { get; set; }
+        public double Error { get; set; }
+        public string Operation { get; set; }
+    }
+}
